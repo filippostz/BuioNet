@@ -2,6 +2,8 @@
 
 A self-hosted network monitoring dashboard built on top of Nmap. Upload Nmap XML scans to build a live inventory of your network — track assets, detect changes, manage categories, and visualise host relationships as an interactive graph.
 
+<img width="1452" height="864" alt="BuioNet" src="https://github.com/user-attachments/assets/d4857e14-11a7-468d-8f68-23e8e13ff56e" />
+
 ---
 
 ## Features
