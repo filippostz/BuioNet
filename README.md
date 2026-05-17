@@ -46,7 +46,7 @@ export SECRET_KEY="replace-with-a-long-random-string"
 python run.py
 ```
 
-Open **http://localhost:5005** and log in with:
+Open http://localhost:5005 and log in with:
 
 | Username | Password   |
 |----------|------------|
