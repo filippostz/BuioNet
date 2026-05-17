@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}{% if action == 'new' %}New Workspace{% else %}Edit Workspace{% endif %} — BuioNet{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width:600px">
+  <div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('dashboard.index') }}" class="btn btn-sm btn-outline-secondary me-3">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <h4 class="mb-0 fw-bold">
+      <i class="bi bi-diagram-3 text-info me-2"></i>
+      {% if action == 'new' %}New Workspace{% else %}Edit Workspace{% endif %}
+    </h4>
+  </div>
+
+  <div class="card border-secondary">
+    <div class="card-body p-4">
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label text-muted small">Workspace Name <span class="text-danger">*</span></label>
+          <input type="text" name="name" class="form-control bg-dark border-secondary text-white"
+                 placeholder="e.g. Home, Office, Customer01" required
+                 value="{{ workspace.name if workspace else '' }}">
+          <div class="form-text text-muted">A slug will be auto-generated from the name</div>
+        </div>
+        <div class="mb-4">
+          <label class="form-label text-muted small">Description</label>
+          <textarea name="description" class="form-control bg-dark border-secondary text-white" rows="3"
+                    placeholder="Optional description...">{{ workspace.description if workspace else '' }}</textarea>
+        </div>
+        <div class="d-flex gap-2">
+          <a href="{{ url_for('dashboard.index') }}" class="btn btn-secondary">Cancel</a>
+          <button type="submit" class="btn btn-info">
+            <i class="bi bi-check-lg me-1"></i>
+            {% if action == 'new' %}Create Workspace{% else %}Save Changes{% endif %}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

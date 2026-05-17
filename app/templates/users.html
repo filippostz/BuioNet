@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% block title %}Users — BuioNet{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-4">
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="mb-0 fw-bold">
+        <i class="bi bi-people-fill text-info me-2"></i>Users
+      </h4>
+      <p class="text-muted small mb-0 mt-1">Manage user accounts and workspace access</p>
+    </div>
+    <a href="{{ url_for('users.new') }}" class="btn btn-info btn-sm">
+      <i class="bi bi-person-plus me-1"></i>New User
+    </a>
+  </div>
+
+  <div class="card border-secondary">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 align-middle">
+          <thead class="border-bottom border-secondary">
+            <tr>
+              <th class="ps-4">Username</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Workspaces</th>
+              <th>Created</th>
+              <th class="pe-4"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in users %}
+            <tr>
+              <td class="ps-4 fw-semibold">
+                <i class="bi bi-person-circle text-muted me-2"></i>{{ user.username }}
+              </td>
+              <td>
+                <span class="badge rounded-pill
+                  {% if user.role == 'admin' %}bg-danger
+                  {% elif user.role == 'operator' %}bg-warning text-dark
+                  {% else %}bg-info text-dark{% endif %}">
+                  {{ user.role|upper }}
+                </span>
+              </td>
+              <td>
+                {% if user.active %}
+                <span class="badge bg-success">Active</span>
+                {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+                {% endif %}
+              </td>
+              <td class="text-muted small">
+                {% if user.role == 'admin' %}
+                  <span class="text-info">All workspaces</span>
+                {% elif user_ws_map[user.id] %}
+                  {{ user_ws_map[user.id] | join(', ') }}
+                {% else %}
+                  <span class="text-muted fst-italic">None assigned</span>
+                {% endif %}
+              </td>
+              <td class="text-muted small">{{ user.created_at[:10] if user.created_at else '—' }}</td>
+              <td class="pe-4 text-end">
+                <a href="{{ url_for('users.edit', user_id=user.id) }}"
+                   class="btn btn-outline-secondary btn-sm me-1">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                {% if user.id != current_user.id %}
+                <form method="post" action="{{ url_for('users.delete', user_id=user.id) }}"
+                      class="d-inline" onsubmit="return confirm('Delete user {{ user.username }}?')">
+                  <button class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if new_api_key %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const key   = {{ new_api_key | tojson }};
+  const label = {{ new_api_label | tojson }};
+
+  const html = `
+  <div class="modal fade" id="apiKeyRevealModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+      <div class="modal-content bg-dark border-secondary">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title text-success"><i class="bi bi-key me-2"></i>API Key for ${escH(label)}</h5>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning py-2 small mb-3">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Copy this key now — it will <strong>not</strong> be shown again.
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <code id="apiRevealText" class="flex-grow-1 p-2 rounded text-info"
+                  style="background:#0a0f1a;word-break:break-all;font-size:13px">${escH(key)}</code>
+            <button class="btn btn-outline-secondary btn-sm flex-shrink-0" onclick="copyRevealKey()">
+              <i class="bi bi-clipboard" id="revealCopyIcon"></i>
+            </button>
+          </div>
+          <div class="mt-3 text-muted small">
+            Use it with:<br>
+            <code class="text-info" style="font-size:11px">curl -H "X-Api-Key: ${escH(key)}" ...</code>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-success" data-bs-dismiss="modal">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+  new bootstrap.Modal(document.getElementById('apiKeyRevealModal')).show();
+});
+
+function copyRevealKey() {
+  const text = document.getElementById('apiRevealText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const ic = document.getElementById('revealCopyIcon');
+    ic.className = 'bi bi-check2 text-success';
+    setTimeout(() => ic.className = 'bi bi-clipboard', 1500);
+  });
+}
+
+function escH(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endif %}
+{% endblock %}

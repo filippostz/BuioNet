@@ -1,0 +1,325 @@
+{% extends 'base.html' %}
+{% block title %}{{ workspace.name }} — BuioNet{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column" style="height:calc(100vh - 56px); overflow:hidden">
+
+  {% if latest_scan %}
+  {# ── Unified header: breadcrumb row + trend/stats in one block ── #}
+  <div class="flex-shrink-0 border-bottom border-secondary" style="
+       height:185px; background:#0a0f1a; overflow:hidden;
+       display:grid;
+       grid-template-rows:30px 1fr;
+       grid-template-columns:60fr 40fr;">
+
+    {# Row 1 col 1: breadcrumb + workspace name #}
+    <div class="d-flex align-items-center gap-2 px-3 border-bottom border-secondary border-end border-secondary" style="overflow:hidden; min-width:0">
+      <a href="{{ url_for('dashboard.index') }}" class="text-info text-decoration-none" style="font-size:11px;white-space:nowrap">
+        <i class="bi bi-grid me-1"></i>Workspaces
+      </a>
+      <span class="text-muted" style="font-size:11px">/</span>
+      <span class="text-white fw-semibold text-truncate" style="font-size:12px">{{ workspace.name }}</span>
+      {% if workspace.description %}
+      <span class="text-muted text-truncate" style="font-size:11px">· {{ workspace.description }}</span>
+      {% endif %}
+    </div>
+
+    {# Row 1 col 2: trend label + status + host/asset counts + actions #}
+    <div class="d-flex align-items-center gap-3 px-2 border-bottom border-secondary" style="overflow:hidden; min-width:0">
+      <span class="text-info flex-shrink-0" style="font-size:11px"><i class="bi bi-graph-up me-1"></i>Change Trend</span>
+      <span style="font-size:11px;white-space:nowrap;flex-shrink:0">
+        {% if latest_scan.changes > 0 %}
+        <span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>{{ latest_scan.changes }}</span>
+        {% else %}
+        <span class="text-success"><i class="bi bi-check-circle"></i></span>
+        {% endif %}
+      </span>
+      <div class="d-flex align-items-center gap-3 mx-2" style="flex-shrink:0">
+        <div class="d-flex align-items-baseline gap-1">
+          <span class="fw-bold text-white" style="font-size:15px">{{ latest_scan.total_hosts }}</span>
+          <span class="text-muted" style="font-size:9px;text-transform:uppercase;letter-spacing:.06em">Hosts</span>
+        </div>
+        <div class="d-flex align-items-baseline gap-1">
+          <span class="fw-bold text-info" style="font-size:15px">{{ stats.asset_count or 0 }}</span>
+          <span class="text-muted" style="font-size:9px;text-transform:uppercase;letter-spacing:.06em">Assets</span>
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-1 ms-auto flex-shrink-0">
+        <a href="{{ url_for('scan.view', slug=workspace.slug, scan_id=latest_scan.id) }}"
+           class="btn btn-dark border-secondary btn-sm py-0 px-2" style="font-size:11px" title="Full graph view">
+          <i class="bi bi-arrows-fullscreen"></i>
+        </a>
+        <a href="{{ url_for('workspace.history', slug=workspace.slug) }}"
+           class="btn btn-dark border-secondary btn-sm py-0 px-2" style="font-size:11px">
+          <i class="bi bi-clock-history me-1"></i>History
+          {% if scan_count %}<span class="badge bg-secondary ms-1" style="font-size:9px">{{ scan_count }}</span>{% endif %}
+        </a>
+        {% if not current_user.is_operator() %}
+        <button class="btn btn-info btn-sm py-0 px-2" style="font-size:11px"
+                data-bs-toggle="modal" data-bs-target="#uploadModal">
+          <i class="bi bi-cloud-upload me-1"></i>Upload
+        </button>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Row 2 col 1: trend chart #}
+    <div class="border-end border-secondary px-2 pb-1 pt-1" style="min-width:0; min-height:0; overflow:hidden">
+      <canvas id="trendChart" style="display:block;width:100%;height:100%"></canvas>
+    </div>
+
+    {# Row 2 col 2: open ports list #}
+    <div class="px-3 py-2 d-flex flex-column" style="overflow:hidden; min-width:0; min-height:0">
+      <div class="flex-grow-1" style="overflow-y:auto;min-height:0">
+        {% if stats.all_ports %}
+        <div class="d-flex flex-wrap gap-1 pt-1">
+          {% for p in stats.all_ports %}
+          <span style="font-size:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
+                       border-radius:4px;padding:1px 6px;white-space:nowrap;color:#adb5bd">
+            <span class="text-info fw-semibold">{{ p.portid }}</span><span class="text-muted">/{{ p.svc }}</span>
+            <span style="color:#6c757d;margin-left:3px">×{{ p.cnt }}</span>
+          </span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <span class="text-muted fst-italic small">No open ports in this scan</span>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  {% else %}
+  {# ── No scans: minimal topbar ── #}
+  <div class="d-flex align-items-center justify-content-between px-4 py-2 border-bottom border-secondary bg-dark flex-shrink-0">
+    <div>
+      <nav aria-label="breadcrumb"><ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{{ url_for('dashboard.index') }}" class="text-info">Workspaces</a></li>
+        <li class="breadcrumb-item active">{{ workspace.name }}</li>
+      </ol></nav>
+      <h5 class="mb-0 fw-bold mt-1"><i class="bi bi-diagram-3 text-info me-2"></i>{{ workspace.name }}</h5>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('workspace.history', slug=workspace.slug) }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-clock-history me-1"></i>History
+      </a>
+      {% if not current_user.is_operator() %}
+      <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#uploadModal">
+        <i class="bi bi-cloud-upload me-1"></i>Upload Scan
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Graph area (fills remaining height) ── #}
+  {% if latest_scan %}
+  <div class="flex-grow-1 d-flex overflow-hidden">
+
+    {# Graph canvas — takes all width left of the sidebar; scrolls vertically #}
+    <div class="position-relative flex-grow-1" style="overflow-y:auto;overflow-x:hidden;min-height:0">
+      <div id="graph-loading" class="graph-loading">
+        <div class="spinner-border text-info" role="status"></div>
+        <p class="mt-2 text-muted small">Loading network graph…</p>
+      </div>
+      <svg id="networkGraph" width="100%" style="display:block"></svg>
+    </div>
+
+    {# Sidebar — always visible, fixed width #}
+    <div class="scan-sidebar border-start border-secondary bg-dark flex-shrink-0"
+         id="sidebar" style="width:280px; overflow-y:auto">
+      <div class="sidebar-header px-3 py-2 border-bottom border-secondary d-flex align-items-center">
+        <span class="fw-semibold small"><i class="bi bi-info-circle text-info me-2"></i>Host Details</span>
+      </div>
+      <div id="sidebarContent" class="p-3">
+        <div class="text-muted small text-center py-4">
+          <i class="bi bi-cursor display-6 opacity-25"></i>
+          <p class="mt-2">Click a node to see host details</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  {% else %}
+  <div class="flex-grow-1 d-flex align-items-center justify-content-center text-center text-muted">
+    <div>
+      <i class="bi bi-inbox display-1 opacity-25"></i>
+      <h5 class="mt-3">No scans yet</h5>
+      <p class="small">Upload an Nmap XML scan to get started.</p>
+      {% if not current_user.is_operator() %}
+      <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#uploadModal">
+        <i class="bi bi-cloud-upload me-1"></i>Upload First Scan
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Upload Modal -->
+{% if not current_user.is_operator() %}
+<div class="modal fade" id="uploadModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="bi bi-cloud-upload text-info me-2"></i>Upload Nmap Scan</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{{ url_for('workspace.upload', slug=workspace.slug) }}"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="upload-zone mb-3" id="uploadZone">
+            <input type="file" name="scan_file" id="scanFile" accept=".xml" class="upload-input" required>
+            <div class="upload-zone-content text-center py-4">
+              <i class="bi bi-file-earmark-code display-4 text-info opacity-50"></i>
+              <p class="mt-2 mb-0 text-muted">Drop XML file here or <span class="text-info">browse</span></p>
+              <p class="small text-muted mt-1" id="fileNameDisplay">Nmap XML format only</p>
+            </div>
+          </div>
+          <div class="border border-secondary rounded" style="background:#0a0f1a">
+            <!-- Tabs -->
+            <div class="d-flex border-bottom border-secondary" style="font-size:11px">
+              <button class="cmd-tab active px-3 py-2 border-0 text-white"
+                      style="background:transparent;border-bottom:2px solid #0dcaf0!important;cursor:pointer"
+                      onclick="switchCmdTab('file', this)">
+                <i class="bi bi-file-earmark-arrow-up me-1"></i>Save &amp; upload
+              </button>
+              <button class="cmd-tab px-3 py-2 border-0 text-muted"
+                      style="background:transparent;cursor:pointer"
+                      onclick="switchCmdTab('stream', this)">
+                <i class="bi bi-broadcast me-1"></i>Stream via API
+              </button>
+              <button type="button" class="btn btn-link btn-sm text-info p-0 ms-auto me-2" style="font-size:11px" onclick="copyActiveCmd(this)">
+                <i class="bi bi-clipboard me-1"></i>Copy
+              </button>
+            </div>
+            <!-- File-based command -->
+            <div id="cmdPanel-file" class="p-2">
+              <pre class="mb-0 text-info" style="font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-all" id="nmapCmdBlock">sudo nmap -sS -sV -sC -O \
+     --osscan-guess \
+     --version-intensity 9 \
+     -p- \
+     --open \
+     -T4 \
+     --min-rate 1000 \
+     --max-retries 2 \
+     -oX "scan_$(date +%Y-%m-%d_%H-%M-%S).xml" \
+     192.168.1.0/24</pre>
+            </div>
+            <!-- Streaming API command -->
+            <div id="cmdPanel-stream" class="p-2" style="display:none">
+              <pre class="mb-0 text-info" style="font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-all" id="streamCmdBlock"></pre>
+              <div class="mt-2 text-muted" style="font-size:10px">
+                <i class="bi bi-key me-1"></i>Get an API key from your
+                <a href="{{ url_for('api_keys.index') }}" class="text-info text-decoration-none" target="_blank">profile</a>.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-info"><i class="bi bi-upload me-1"></i>Upload</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if latest_scan %}
+<script src="{{ url_for('static', filename='js/network_graph.js') }}"></script>
+{% endif %}
+<script>
+const slug = {{ workspace.slug | tojson }};
+
+let _activeCmd = 'file';
+
+function switchCmdTab(panel, btn) {
+  _activeCmd = panel;
+  document.getElementById('cmdPanel-file').style.display   = panel === 'file'   ? '' : 'none';
+  document.getElementById('cmdPanel-stream').style.display = panel === 'stream' ? '' : 'none';
+  document.querySelectorAll('.cmd-tab').forEach(t => {
+    t.classList.remove('active');
+    t.style.borderBottom = '';
+    t.classList.add('text-muted');
+    t.classList.remove('text-white');
+  });
+  btn.classList.add('active', 'text-white');
+  btn.classList.remove('text-muted');
+  btn.style.borderBottom = '2px solid #0dcaf0';
+}
+
+function copyActiveCmd(btn) {
+  const id  = _activeCmd === 'file' ? 'nmapCmdBlock' : 'streamCmdBlock';
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = '<i class="bi bi-clipboard-check me-1"></i>Copied!';
+    setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy'; }, 2000);
+  });
+}
+
+// Pre-fill streaming command with real host + workspace slug
+(function() {
+  const host    = window.location.origin;
+  const wsSlug  = {{ workspace.slug | tojson }};
+  const cmd = `sudo nmap -sS -sV -O -T4 --open 192.168.1.0/24 -oX - | \\
+  curl -s \\
+       -H "X-Api-Key: <your-api-key>" \\
+       -F "scan_file=@-;filename=scan.xml;type=application/xml" \\
+       ${host}/api/v1/workspace/${wsSlug}/upload`;
+  document.getElementById('streamCmdBlock').textContent = cmd;
+})();
+
+const zone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('scanFile');
+const fileDisplay = document.getElementById('fileNameDisplay');
+if (zone && fileInput) {
+  // fileInput is a transparent overlay over the zone — no programmatic click() needed
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) { fileInput.files = e.dataTransfer.files; fileDisplay.textContent = e.dataTransfer.files[0].name; }
+  });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) fileDisplay.textContent = fileInput.files[0].name; });
+}
+
+{% if latest_scan %}
+fetch(`/workspace/${slug}/trend`)
+  .then(r => r.json())
+  .then(data => {
+    const canvas = document.getElementById('trendChart');
+    if (!canvas || !data.length) return;
+    new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.label ? d.label.substring(0,16) : ''),
+        datasets: [{
+          data: data.map(d => d.changes),
+          borderColor: '#0dcaf0', backgroundColor: 'rgba(13,202,240,0.08)',
+          tension: 0.4, fill: true, pointBackgroundColor: '#0dcaf0',
+          pointRadius: 3, pointHoverRadius: 5, borderWidth: 1.5
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y} change${c.parsed.y!==1?'s':''}` } } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#495057', maxRotation: 0, font: { size: 9 } } },
+          y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#495057', stepSize: 1, font: { size: 9 } }, min: 0 }
+        }
+      }
+    });
+  });
+
+document.addEventListener('DOMContentLoaded', () => {
+  const GRAPH_DATA_URL = {{ url_for('scan.graph_data', slug=workspace.slug, scan_id=latest_scan.id) | tojson }};
+  initNetworkGraph(GRAPH_DATA_URL, slug);
+});
+{% endif %}
+</script>
+{% endblock %}

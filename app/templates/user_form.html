@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}{% if action == 'new' %}New User{% else %}Edit User{% endif %} — BuioNet{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width:600px">
+  <div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('users.index') }}" class="btn btn-sm btn-outline-secondary me-3">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <h4 class="mb-0 fw-bold">
+      <i class="bi bi-person-circle text-info me-2"></i>
+      {% if action == 'new' %}New User{% else %}Edit User: {{ user.username }}{% endif %}
+    </h4>
+  </div>
+
+  <div class="card border-secondary">
+    <div class="card-body p-4">
+      <form method="post">
+        {% if action == 'new' %}
+        <div class="mb-3">
+          <label class="form-label text-muted small">Username <span class="text-danger">*</span></label>
+          <input type="text" name="username" class="form-control bg-dark border-secondary text-white"
+                 placeholder="username" required>
+        </div>
+        {% endif %}
+
+        <div class="mb-3" id="passwordField">
+          <label class="form-label text-muted small">
+            Password {% if action == 'new' %}<span class="text-danger">*</span>{% else %}(leave blank to keep){% endif %}
+          </label>
+          <input type="password" name="password" id="passwordInput"
+                 class="form-control bg-dark border-secondary text-white"
+                 {% if action == 'new' %}required{% endif %} placeholder="••••••••">
+        </div>
+
+        {% if action == 'new' %}
+        <div class="mb-3 px-3 py-2 rounded border border-info d-none" id="apiKeyNote"
+             style="background:rgba(13,202,240,0.05);font-size:13px">
+          <i class="bi bi-key text-info me-2"></i>
+          An API key will be generated automatically and shown once after creation.
+          No password is needed.
+        </div>
+        {% endif %}
+
+        <div class="mb-3">
+          <label class="form-label text-muted small">Role <span class="text-danger">*</span></label>
+          <select name="role" id="roleSelect" class="form-select bg-dark border-secondary text-white">
+            <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
+            <option value="operator" {% if not user or user.role == 'operator' %}selected{% endif %}>Operator</option>
+            <option value="api" {% if user and user.role == 'api' %}selected{% endif %}>API</option>
+          </select>
+          <div class="form-text text-muted">
+            Admin: full access · Operator: view only, no uploads · API: programmatic access via API key
+          </div>
+        </div>
+
+        {% if action == 'edit' %}
+        <div class="mb-3">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="active" id="activeCheck"
+                   {% if user.active %}checked{% endif %}>
+            <label class="form-check-label text-muted" for="activeCheck">Account active</label>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if workspaces %}
+        <div class="mb-4">
+          <label class="form-label text-muted small">Workspace Access</label>
+          <div class="workspace-checklist p-3 border border-secondary rounded">
+            {% for ws in workspaces %}
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="workspace_ids"
+                     value="{{ ws.id }}" id="ws_{{ ws.id }}"
+                     {% if assigned and ws.id in assigned %}checked{% endif %}>
+              <label class="form-check-label" for="ws_{{ ws.id }}">
+                <i class="bi bi-diagram-3 text-info me-1"></i>{{ ws.name }}
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="form-text text-muted">Applies to Operator and API roles. Admins access all workspaces.</div>
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2">
+          <a href="{{ url_for('users.index') }}" class="btn btn-secondary">Cancel</a>
+          <button type="submit" class="btn btn-info" id="submitBtn">
+            <i class="bi bi-check-lg me-1"></i>
+            {% if action == 'new' %}Create User{% else %}Save Changes{% endif %}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% if action == 'new' %}
+{% block scripts %}
+<script>
+const roleSelect    = document.getElementById('roleSelect');
+const passwordField = document.getElementById('passwordField');
+const passwordInput = document.getElementById('passwordInput');
+const apiKeyNote    = document.getElementById('apiKeyNote');
+const submitBtn     = document.getElementById('submitBtn');
+
+function updateForRole() {
+  const isApi = roleSelect.value === 'api';
+  passwordField.classList.toggle('d-none', isApi);
+  apiKeyNote.classList.toggle('d-none', !isApi);
+  passwordInput.required = !isApi;
+  submitBtn.innerHTML = isApi
+    ? '<i class="bi bi-key me-1"></i>Create &amp; generate key'
+    : '<i class="bi bi-check-lg me-1"></i>Create User';
+}
+
+roleSelect.addEventListener('change', updateForRole);
+updateForRole();
+</script>
+{% endblock %}
+{% endif %}

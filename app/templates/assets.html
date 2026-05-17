@@ -1,0 +1,1010 @@
+{% extends 'base.html' %}
+{% block title %}Global Assets — BuioNet{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-4">
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="mb-0 fw-bold">
+        <i class="bi bi-database-fill text-info me-2"></i>Global Asset Cache
+      </h4>
+      <p class="text-muted small mb-0 mt-1">
+        MAC-addressed inventory — tags and metadata apply across all workspaces and scans
+      </p>
+    </div>
+    <span class="badge bg-secondary fs-6">{{ assets|length }} asset{{ 's' if assets|length != 1 }}</span>
+  </div>
+
+  <!-- Category Management -->
+  <div class="card border-secondary mb-4">
+    <div class="card-header border-secondary d-flex align-items-center justify-content-between py-2"
+         style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#catPanel">
+      <span class="fw-semibold small text-info">
+        <i class="bi bi-tags-fill me-1"></i>Category Management
+        <span class="badge bg-dark border border-secondary ms-2">{{ categories|length }}</span>
+      </span>
+      <i class="bi bi-chevron-down text-muted" style="font-size:12px"></i>
+    </div>
+    <div class="collapse" id="catPanel">
+      <div class="card-body pb-3">
+        <!-- Existing categories -->
+        <div class="d-flex flex-column gap-1 mb-3" id="catList">
+          {% for cat in categories %}
+          <div class="d-flex align-items-center gap-1 border border-secondary rounded px-2 py-1 cat-chip"
+               style="background:#111;max-width:420px" id="catChip-{{ cat.id }}" data-cat-id="{{ cat.id }}">
+            {% if current_user.is_admin() %}
+            <i class="bi bi-grip-vertical text-muted me-1" style="cursor:grab;font-size:14px;flex-shrink:0"></i>
+            {% endif %}
+            <span class="rounded-circle d-inline-block me-1 cat-dot-{{ cat.id }}"
+                  style="width:12px;height:12px;background:{{ cat.color }};flex-shrink:0"></span>
+            <span class="small text-white cat-name-{{ cat.id }}">{{ cat.name }}</span>
+            {% if current_user.is_admin() %}
+            <button class="btn btn-link btn-sm text-secondary p-0 ms-1" style="font-size:11px"
+                    onclick="openEditCat({{ cat.id }}, '{{ cat.name | e }}', '{{ cat.color }}')" title="Edit category">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-link btn-sm text-danger p-0" style="font-size:11px"
+                    onclick="deleteCategory({{ cat.id }}, '{{ cat.name | e }}')" title="Delete category">
+              <i class="bi bi-x-lg"></i>
+            </button>
+            {% endif %}
+          </div>
+          {% endfor %}
+          {% if not categories %}
+          <span class="text-muted small" id="noCatsMsg">No categories yet.</span>
+          {% endif %}
+        </div>
+
+        <!-- New category form (admin only) -->
+        {% if current_user.is_admin() %}
+        <form class="d-flex align-items-center gap-2 flex-wrap" id="newCatForm" onsubmit="createCategory(event)">
+          <input type="text" id="newCatName" class="form-control form-control-sm bg-dark border-secondary text-white"
+                 placeholder="Category name" style="max-width:200px" required>
+          <div class="d-flex align-items-center gap-1">
+            <label class="small text-muted mb-0" for="newCatColor">Color:</label>
+            <input type="color" id="newCatColor" value="#4361ee"
+                   class="form-control form-control-color border-secondary" style="width:40px;height:31px">
+          </div>
+          <button type="submit" class="btn btn-sm btn-outline-info">
+            <i class="bi bi-plus-lg me-1"></i>Add Category
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Workspace filter + Search -->
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+    {% if workspaces|length > 0 %}
+    <select id="wsFilter" class="form-select form-select-sm bg-dark border-secondary text-white" style="max-width:220px">
+      <option value="">All workspaces</option>
+      {% for ws in workspaces %}
+      <option value="{{ ws.slug }}">{{ ws.name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    <input type="text" id="assetSearch" class="form-control bg-dark border-secondary text-white"
+           placeholder="Search by MAC, tag, vendor, hostname, OS, category…" style="max-width:380px">
+  </div>
+
+  {% if ip_conflicts or hostname_conflicts %}
+  <div class="alert mb-3 p-0 border border-warning" style="background:rgba(255,193,7,0.06);border-radius:6px" id="conflictAlert">
+    <div class="d-flex align-items-center justify-content-between px-3 py-2"
+         style="cursor:pointer;border-bottom:1px solid rgba(255,193,7,0.2)"
+         data-bs-toggle="collapse" data-bs-target="#conflictBody">
+      <span class="text-warning fw-semibold small">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        {{ (ip_conflicts|length) + (hostname_conflicts|length) }} duplicate{{ 's' if (ip_conflicts|length + hostname_conflicts|length) != 1 }} detected
+      </span>
+      <i class="bi bi-chevron-down text-warning" style="font-size:11px"></i>
+    </div>
+    <div class="collapse" id="conflictBody">
+      <ul class="list-unstyled mb-0 px-3 py-2 small" style="line-height:2">
+        {% for c in ip_conflicts %}
+        <li>
+          <i class="bi bi-hdd-network text-warning me-1"></i>
+          IP <code class="text-warning">{{ c.last_ip }}</code>
+          shared by {{ c.macs.split(',')|length }} assets
+          <span class="text-muted">in {{ c.workspace_name }}</span>
+        </li>
+        {% endfor %}
+        {% for c in hostname_conflicts %}
+        <li>
+          <i class="bi bi-pc-display text-warning me-1"></i>
+          Hostname <code class="text-warning">{{ c.hostname }}</code>
+          at <code class="text-warning">{{ c.last_ip }}</code>
+          shared by {{ c.macs.split(',')|length }} assets
+          <span class="text-muted">in {{ c.workspace_name }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if assets %}
+  <div class="card border-secondary">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 align-middle" id="assetTable">
+          <thead class="border-bottom border-secondary">
+            <tr>
+              <th class="ps-3" style="width:36px">
+                <input class="form-check-input" type="checkbox" id="selectAll" title="Select all visible">
+              </th>
+              <th class="ps-2 sortable" data-col="1" style="cursor:pointer;user-select:none">MAC Address <span class="sort-icon text-muted ms-1"></span></th>
+              <th class="sortable" data-col="2" style="cursor:pointer;user-select:none">Category <span class="sort-icon text-muted ms-1"></span></th>
+              <th class="sortable" data-col="3" style="cursor:pointer;user-select:none">Tag <span class="sort-icon text-muted ms-1"></span></th>
+              <th class="sortable" data-col="4" style="cursor:pointer;user-select:none">Vendor <span class="sort-icon text-muted ms-1"></span></th>
+              <th class="sortable" data-col="5" style="cursor:pointer;user-select:none">Hostname <span class="sort-icon text-muted ms-1"></span></th>
+              <th class="sortable" data-col="6" style="cursor:pointer;user-select:none">Last IP <span class="sort-icon text-muted ms-1"></span></th>
+              <th class="sortable" data-col="7" style="cursor:pointer;user-select:none">Last Updated <span class="sort-icon text-muted ms-1"></span></th>
+              <th class="pe-4"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for asset in assets %}
+            {% set sightings = sightings_map.get(asset.mac_addr, []) %}
+            <tr class="asset-row" style="cursor:pointer"
+                data-mac="{{ asset.mac_addr }}"
+                data-workspaces="{{ sightings | map(attribute='workspace_slug') | join(' ') }}"
+                data-search="{{ asset.mac_addr }} {{ asset.tag }} {{ asset.vendor }} {{ asset.hostname }} {{ asset.os_name }} {{ asset.category_name or '' }}"
+                data-os="{{ (asset.os_name or '') | e }}"
+                data-hostname="{{ (asset.hostname or '') | e }}"
+                data-vendor="{{ (asset.vendor or '') | e }}"
+                data-tag="{{ (asset.tag or '') | e }}"
+                data-last-mac="{{ (asset.last_mac or '') | e }}"
+                data-updated="{{ (asset.updated_at or '')[:16] }}"
+                data-randomized="{{ '1' if asset.mac_addr in randomized_mac_keys or asset.mac_addr.startswith('hostname:') else '' }}"
+                data-sightings='{{ sightings | tojson }}'>
+              <td class="ps-3">
+                <input class="form-check-input row-check" type="checkbox"
+                       data-mac="{{ asset.mac_addr }}" onchange="onRowCheck()">
+              </td>
+              <td class="ps-2">
+                <div class="d-flex align-items-center gap-1 flex-wrap">
+                  {% if asset.mac_addr.startswith('hostname:') %}
+                  <div class="d-flex flex-column gap-1">
+                    <span class="badge" style="background:#3a2000;color:#ffa94d;border:1px solid #ffa94d66;font-size:10px">
+                      <i class="bi bi-shuffle me-1" style="font-size:9px"></i>Randomized
+                    </span>
+                    {% if asset.last_mac %}
+                    <code class="text-muted" style="font-size:11px">{{ asset.last_mac }}</code>
+                    {% endif %}
+                  </div>
+                  {% elif asset.mac_addr in randomized_mac_keys %}
+                  <div class="d-flex flex-column gap-1">
+                    <span class="badge" style="background:#3a2000;color:#ffa94d;border:1px solid #ffa94d66;font-size:10px">
+                      <i class="bi bi-shuffle me-1" style="font-size:9px"></i>Randomized
+                    </span>
+                    <code class="text-muted" style="font-size:11px">{{ asset.mac_addr }}</code>
+                  </div>
+                  {% elif asset.mac_addr.startswith('ip:') %}
+                  <span class="text-muted fst-italic small">—</span>
+                  {% else %}
+                  <code class="text-warning">{{ asset.mac_addr }}</code>
+                  {% endif %}
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-1"
+                          onclick="editMac('{{ asset.mac_addr | e }}')"
+                          title="Assign MAC address">
+                    <i class="bi bi-pencil" style="font-size:10px"></i>
+                  </button>
+                </div>
+              </td>
+
+              <!-- Category -->
+              <td>
+                <select class="form-select form-select-sm bg-dark border-secondary text-white cat-select"
+                        data-mac="{{ asset.mac_addr }}"
+                        onchange="assignCategory('{{ asset.mac_addr }}', this)"
+                        style="min-width:130px;font-size:12px">
+                  <option value="" {% if not asset.category_id %}selected{% endif %}>— none —</option>
+                  {% for cat in categories %}
+                  <option value="{{ cat.id }}"
+                          data-color="{{ cat.color }}"
+                          {% if asset.category_id == cat.id %}selected{% endif %}>
+                    {{ cat.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </td>
+
+              <!-- Tag -->
+              <td>
+                <div class="d-flex align-items-center gap-1">
+                  <span class="asset-display tag-display-{{ asset.mac_addr | replace(':', '_') }}">
+                    {% if asset.tag %}
+                    <span class="badge" style="background:#3a2e00;color:#ffe08a;border:1px solid #ffe08a">
+                      {{ asset.tag }}
+                    </span>
+                    {% else %}
+                    <span class="text-muted fst-italic small">—</span>
+                    {% endif %}
+                  </span>
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-1"
+                          onclick="editField('{{ asset.mac_addr }}', 'tag', '{{ (asset.tag or '') | e }}')"
+                          title="Edit tag">
+                    <i class="bi bi-pencil" style="font-size:10px"></i>
+                  </button>
+                </div>
+              </td>
+
+              <!-- Vendor -->
+              <td>
+                <div class="d-flex align-items-center gap-1">
+                  <span class="small asset-display vendor-display-{{ asset.mac_addr | replace(':', '_') }}">
+                    {% if asset.vendor %}{{ asset.vendor }}{% else %}<span class="text-muted">—</span>{% endif %}
+                  </span>
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-1"
+                          onclick="editField('{{ asset.mac_addr }}', 'vendor', '{{ (asset.vendor or '') | e }}')"
+                          title="Edit vendor">
+                    <i class="bi bi-pencil" style="font-size:10px"></i>
+                  </button>
+                </div>
+              </td>
+
+              <!-- Hostname -->
+              <td>
+                <div class="d-flex align-items-center gap-1">
+                  <span class="small asset-display hostname-display-{{ asset.mac_addr | replace(':', '_') }}">
+                    {% if asset.hostname %}{{ asset.hostname }}{% else %}<span class="text-muted">—</span>{% endif %}
+                  </span>
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-1"
+                          onclick="editField('{{ asset.mac_addr }}', 'hostname', '{{ (asset.hostname or '') | e }}')"
+                          title="Edit hostname">
+                    <i class="bi bi-pencil" style="font-size:10px"></i>
+                  </button>
+                </div>
+              </td>
+
+              <!-- Last IP -->
+              <td>
+                {% set lip = latest_ip_map.get(asset.mac_addr, '') %}
+                {% if lip %}
+                <code class="small text-info">{{ lip }}</code>
+                {% else %}—{% endif %}
+              </td>
+
+              <!-- Updated -->
+              <td class="text-muted small">
+                {{ asset.updated_at[:16] if asset.updated_at else '—' }}
+              </td>
+
+              <!-- Delete -->
+              <td class="pe-4 text-end">
+                {% if current_user.is_admin() %}
+                <button class="btn btn-outline-danger btn-sm"
+                        onclick="deleteAsset('{{ asset.mac_addr }}')" title="Delete">
+                  <i class="bi bi-trash"></i>
+                </button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="text-center py-5 text-muted">
+    <i class="bi bi-database display-1 opacity-25"></i>
+    <h5 class="mt-3">No assets yet</h5>
+    <p class="small">Upload a scan to a workspace to start building the asset cache.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Asset detail sidebar -->
+<div id="assetDetail"
+     style="position:fixed;top:0;right:0;width:340px;height:100vh;
+            background:#0d1117;border-left:1px solid rgba(255,255,255,0.12);
+            z-index:1045;overflow-y:auto;padding:20px 18px;
+            transform:translateX(100%);transition:transform .2s ease">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <span class="fw-semibold text-info small"><i class="bi bi-info-circle me-1"></i>Asset Details</span>
+    <button class="btn-close btn-close-white btn-sm" onclick="closeAssetDetail()"></button>
+  </div>
+  <div id="sdContent" class="d-flex flex-column gap-3"></div>
+</div>
+
+<!-- Bulk action bar -->
+<div id="bulkBar" class="d-none"
+     style="position:fixed;bottom:0;left:0;right:0;z-index:1050;
+            background:rgba(10,15,26,0.97);border-top:1px solid rgba(0,210,255,0.25);
+            backdrop-filter:blur(6px)">
+  <div class="container-fluid px-4 py-2 d-flex align-items-center gap-3 flex-wrap">
+    <span class="text-info fw-semibold small" id="bulkCount"></span>
+    <button class="btn btn-sm btn-outline-secondary ms-1" onclick="clearSelection()">
+      <i class="bi bi-x-lg me-1"></i>Clear
+    </button>
+
+    <div class="d-flex align-items-center gap-2 ms-auto flex-wrap">
+      <!-- Bulk category assign -->
+      <div class="d-flex align-items-center gap-2">
+        <label class="small text-muted mb-0">Category:</label>
+        <select id="bulkCatSelect"
+                class="form-select form-select-sm bg-dark border-secondary text-white"
+                style="min-width:140px">
+          <option value="">— none —</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}">{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-sm btn-outline-info" onclick="bulkAssignCategory()">
+          Apply
+        </button>
+      </div>
+
+      {% if current_user.is_admin() %}
+      <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()">
+        <i class="bi bi-trash me-1"></i>Delete selected
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- MAC address edit modal -->
+<div class="modal fade" id="macModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary py-2">
+        <h6 class="modal-title">Assign MAC Address</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label small text-muted mb-1">MAC Address</label>
+        <input type="text" id="macInput" class="form-control bg-dark border-secondary text-white font-monospace"
+               placeholder="AA:BB:CC:DD:EE:FF" maxlength="17">
+        <div class="text-muted mt-2" style="font-size:11px">
+          This will permanently replace the current identifier.
+        </div>
+      </div>
+      <div class="modal-footer border-secondary py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-warning btn-sm" id="macSaveBtn">Assign</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit category modal -->
+<div class="modal fade" id="editCatModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary py-2">
+        <h6 class="modal-title">Edit Category</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+          <label class="form-label small text-muted mb-1">Name</label>
+          <input type="text" id="editCatName" class="form-control bg-dark border-secondary text-white" required>
+        </div>
+        <div>
+          <label class="form-label small text-muted mb-1">Color</label>
+          <input type="color" id="editCatColor" class="form-control form-control-color border-secondary w-100">
+        </div>
+      </div>
+      <div class="modal-footer border-secondary py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-info btn-sm" id="editCatSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit field modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary py-2">
+        <h6 class="modal-title" id="editModalTitle">Edit</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="editInput" class="form-control bg-dark border-secondary text-white">
+      </div>
+      <div class="modal-footer border-secondary py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-info btn-sm" id="editSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.cat-chip.drag-over {
+  border-color: rgba(0,210,255,0.6) !important;
+  background: rgba(0,210,255,0.08) !important;
+  box-shadow: 0 0 0 2px rgba(0,210,255,0.2);
+}
+.cat-chip.dragging { opacity: 0.4; }
+</style>
+<script>
+// ── Row selection & bulk actions ──────────────────────────────────────────
+const _selected = new Set();
+
+function visibleRows() {
+  return Array.from(document.querySelectorAll('.asset-row'))
+              .filter(r => r.style.display !== 'none');
+}
+
+function updateBulkBar() {
+  const bar   = document.getElementById('bulkBar');
+  const count = document.getElementById('bulkCount');
+  if (_selected.size > 0) {
+    bar.classList.remove('d-none');
+    count.textContent = `${_selected.size} selected`;
+  } else {
+    bar.classList.add('d-none');
+  }
+
+  // Update select-all checkbox state
+  const allCb  = document.getElementById('selectAll');
+  const visible = visibleRows();
+  const visSelected = visible.filter(r => _selected.has(r.dataset.mac));
+  if (visSelected.length === 0) {
+    allCb.checked       = false;
+    allCb.indeterminate = false;
+  } else if (visSelected.length === visible.length) {
+    allCb.checked       = true;
+    allCb.indeterminate = false;
+  } else {
+    allCb.checked       = false;
+    allCb.indeterminate = true;
+  }
+}
+
+function onRowCheck() {
+  document.querySelectorAll('.row-check').forEach(cb => {
+    if (cb.checked) _selected.add(cb.dataset.mac);
+    else            _selected.delete(cb.dataset.mac);
+  });
+  updateBulkBar();
+}
+
+document.getElementById('selectAll').addEventListener('change', function() {
+  const rows = visibleRows();
+  rows.forEach(row => {
+    const cb = row.querySelector('.row-check');
+    if (cb) cb.checked = this.checked;
+    if (this.checked) _selected.add(row.dataset.mac);
+    else              _selected.delete(row.dataset.mac);
+  });
+  updateBulkBar();
+});
+
+function clearSelection() {
+  _selected.clear();
+  document.querySelectorAll('.row-check').forEach(cb => cb.checked = false);
+  updateBulkBar();
+}
+
+function bulkDelete() {
+  const macs = [..._selected];
+  if (!macs.length) return;
+  if (!confirm(`Delete ${macs.length} asset${macs.length > 1 ? 's' : ''} from the global cache?`)) return;
+  fetch('/assets/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ macs })
+  })
+  .then(r => r.json())
+  .then(() => {
+    macs.forEach(mac => {
+      const row = document.querySelector(`tr[data-mac="${CSS.escape(mac)}"]`);
+      if (row) row.remove();
+    });
+    _selected.clear();
+    updateBulkBar();
+  })
+  .catch(err => console.error(err));
+}
+
+function bulkAssignCategory() {
+  const macs   = [..._selected];
+  const catId  = document.getElementById('bulkCatSelect').value;
+  if (!macs.length) return;
+  fetch('/assets/bulk-update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ macs, category_id: catId || null })
+  })
+  .then(r => r.json())
+  .then(() => location.reload())
+  .catch(err => console.error(err));
+}
+
+// Keep select-all in sync whenever filters change (rows hide/show)
+function syncSelectAllAfterFilter() {
+  // Uncheck hidden rows' checkboxes (don't keep invisible items selected)
+  document.querySelectorAll('.asset-row').forEach(row => {
+    if (row.style.display === 'none') {
+      _selected.delete(row.dataset.mac);
+      const cb = row.querySelector('.row-check');
+      if (cb) cb.checked = false;
+    }
+  });
+  updateBulkBar();
+}
+
+// ── Filtering — workspace select + text search ────────────────────────────
+let _activeWs = '';
+
+function applyFilters() {
+  const q = document.getElementById('assetSearch').value.toLowerCase();
+  document.querySelectorAll('.asset-row').forEach(row => {
+    const wsOk = !_activeWs || (' ' + row.dataset.workspaces + ' ').includes(' ' + _activeWs + ' ');
+    const qOk  = !q || row.dataset.search.toLowerCase().includes(q);
+    row.style.display = (wsOk && qOk) ? '' : 'none';
+  });
+  syncSelectAllAfterFilter();
+}
+
+document.getElementById('assetSearch').addEventListener('input', applyFilters);
+
+const _wsFilter = document.getElementById('wsFilter');
+if (_wsFilter) {
+  _wsFilter.addEventListener('change', () => {
+    _activeWs = _wsFilter.value;
+    applyFilters();
+  });
+}
+
+// ── Asset detail sidebar ──────────────────────────────────────────────────
+const _sidebar = document.getElementById('assetDetail');
+
+function openAssetDetail(row) {
+  const d = row.dataset;
+  const mac = d.mac;
+  const isRand = !!d.randomized;
+  const sightings = JSON.parse(d.sightings || '[]');
+
+  let macHtml;
+  if (mac.startsWith('hostname:')) {
+    macHtml = `<span class="badge" style="background:#3a2000;color:#ffa94d;border:1px solid #ffa94d66">
+                 <i class="bi bi-shuffle me-1" style="font-size:9px"></i>Randomized
+               </span>
+               ${d.lastMac ? `<br><code class="text-muted" style="font-size:11px">${escHtml(d.lastMac)}</code>` : ''}`;
+  } else if (isRand) {
+    macHtml = `<span class="badge" style="background:#3a2000;color:#ffa94d;border:1px solid #ffa94d66">
+                 <i class="bi bi-shuffle me-1" style="font-size:9px"></i>Randomized
+               </span>
+               <br><code class="text-muted" style="font-size:11px">${escHtml(mac)}</code>`;
+  } else if (mac.startsWith('ip:')) {
+    macHtml = `<span class="text-muted fst-italic small">No MAC</span>`;
+  } else {
+    macHtml = `<code class="text-warning">${escHtml(mac)}</code>`;
+  }
+
+  function field(label, val) {
+    return `<div>
+      <div class="text-muted small mb-1" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">${label}</div>
+      <div class="small">${val || '<span class="text-muted fst-italic">—</span>'}</div>
+    </div>`;
+  }
+
+  const wsHtml = sightings.length
+    ? sightings.map(s =>
+        `<div class="d-flex justify-content-between align-items-center py-1 border-bottom border-secondary">
+           <a href="/workspace/${escHtml(s.workspace_slug)}" class="text-info small text-decoration-none">
+             ${escHtml(s.workspace_name)}
+           </a>
+           <div class="text-end">
+             <code class="small text-muted d-block">${escHtml(s.last_ip || '—')}</code>
+             <span class="text-muted" style="font-size:10px">${(s.last_seen || '').slice(0,16)}</span>
+           </div>
+         </div>`
+      ).join('')
+    : '<span class="text-muted small fst-italic">No sightings</span>';
+
+  document.getElementById('sdContent').innerHTML = `
+    ${field('Identifier', macHtml)}
+    <hr class="border-secondary my-1">
+    ${field('Hostname',   escHtml(d.hostname  || '')  || '')}
+    ${field('Vendor',     escHtml(d.vendor    || '')  || '')}
+    ${field('OS',         escHtml(d.os        || '')  || '')}
+    ${field('Tag',        d.tag ? `<span class="badge" style="background:#3a2e00;color:#ffe08a;border:1px solid #ffe08a">${escHtml(d.tag)}</span>` : '')}
+    <hr class="border-secondary my-1">
+    <div>
+      <div class="text-muted small mb-2" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em">Workspaces</div>
+      ${wsHtml}
+    </div>
+    <hr class="border-secondary my-1">
+    ${field('Last updated', escHtml(d.updated || ''))}
+  `;
+
+  _sidebar.style.transform = 'translateX(0)';
+}
+
+function closeAssetDetail() {
+  _sidebar.style.transform = 'translateX(100%)';
+}
+
+// Row click → open sidebar (ignore clicks on interactive controls)
+document.getElementById('assetTable').addEventListener('click', e => {
+  const row = e.target.closest('tr.asset-row');
+  if (!row) return;
+  if (e.target.closest('button, select, input, a')) return;
+  openAssetDetail(row);
+});
+
+// Escape key closes sidebar
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeAssetDetail();
+});
+
+// Edit field modal
+let _editMac = null, _editField = null;
+const editModal = new bootstrap.Modal(document.getElementById('editModal'));
+
+function editField(mac, field, current) {
+  _editMac   = mac;
+  _editField = field;
+  const titles = { tag: 'Edit Tag', vendor: 'Edit Vendor', hostname: 'Edit Hostname', os_name: 'Edit OS' };
+  document.getElementById('editModalTitle').textContent = titles[field] || 'Edit';
+  document.getElementById('editInput').value = current;
+  editModal.show();
+  setTimeout(() => document.getElementById('editInput').focus(), 300);
+}
+
+document.getElementById('editSaveBtn').addEventListener('click', () => {
+  const val = document.getElementById('editInput').value.trim();
+  saveField(_editMac, _editField, val);
+  editModal.hide();
+});
+
+document.getElementById('editInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('editSaveBtn').click();
+});
+
+function saveField(mac, field, value) {
+  const key = mac.replace(/:/g, '_');
+  fetch(`/assets/${encodeURIComponent(mac)}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [field]: value })
+  })
+  .then(r => r.json())
+  .then(() => {
+    const sel = `.${field}-display-${key}`;
+    const el  = document.querySelector(sel);
+    if (!el) return;
+    if (field === 'tag') {
+      el.innerHTML = value
+        ? `<span class="badge" style="background:#3a2e00;color:#ffe08a;border:1px solid #ffe08a">${escHtml(value)}</span>`
+        : '<span class="text-muted fst-italic small">—</span>';
+    } else {
+      el.innerHTML = value || '<span class="text-muted">—</span>';
+    }
+    const row = el.closest('tr');
+    if (row) row.dataset.search = (row.dataset.search + ' ' + value).trim();
+  })
+  .catch(err => console.error(err));
+}
+
+function deleteAsset(mac) {
+  if (!confirm(`Delete asset ${mac} from the global cache?`)) return;
+  fetch(`/assets/${encodeURIComponent(mac)}/delete`, { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      const row = document.querySelector(`tr[data-mac="${CSS.escape(mac)}"]`);
+      if (row) row.remove();
+    })
+    .catch(err => console.error(err));
+}
+
+// Category assignment
+function assignCategory(mac, selectEl) {
+  const catId = selectEl.value || null;
+  fetch(`/assets/${encodeURIComponent(mac)}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category_id: catId })
+  })
+  .then(r => r.json())
+  .then(() => {
+    // Update search index with selected option text
+    const row = selectEl.closest('tr');
+    const opt = selectEl.options[selectEl.selectedIndex];
+    if (row) {
+      const base = row.dataset.search.replace(/\s*cat:\S+/g, '').trim();
+      row.dataset.search = catId ? `${base} cat:${opt.text}` : base;
+    }
+    // Color-code the select border to match category
+    const color = opt.dataset.color || '';
+    selectEl.style.borderColor = color || '';
+    selectEl.style.boxShadow = color ? `0 0 0 1px ${color}33` : '';
+  })
+  .catch(err => console.error(err));
+}
+
+// Color-code existing selects on load
+document.querySelectorAll('.cat-select').forEach(sel => {
+  const opt = sel.options[sel.selectedIndex];
+  const color = opt && opt.dataset.color;
+  if (color) {
+    sel.style.borderColor = color;
+    sel.style.boxShadow = `0 0 0 1px ${color}33`;
+  }
+});
+
+// Category management
+function createCategory(e) {
+  e.preventDefault();
+  const name  = document.getElementById('newCatName').value.trim();
+  const color = document.getElementById('newCatColor').value;
+  if (!name) return;
+
+  fetch('/categories/new', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, color })
+  })
+  .then(r => r.json())
+  .then(cat => {
+    if (cat.error) { alert(cat.error); return; }
+
+    // Remove "no categories" placeholder
+    const noMsg = document.getElementById('noCatsMsg');
+    if (noMsg) noMsg.remove();
+
+    // Add chip to list
+    const chip = document.createElement('div');
+    chip.className = 'd-flex align-items-center gap-1 border border-secondary rounded px-2 py-1 cat-chip';
+    chip.style.cssText = 'background:#111;max-width:420px';
+    chip.id = `catChip-${cat.id}`;
+    chip.dataset.catId = cat.id;
+    chip.innerHTML = `
+      <i class="bi bi-grip-vertical text-muted me-1" style="cursor:grab;font-size:14px;flex-shrink:0"></i>
+      <span class="rounded-circle d-inline-block me-1 cat-dot-${cat.id}"
+            style="width:12px;height:12px;background:${escHtml(cat.color)};flex-shrink:0"></span>
+      <span class="small text-white cat-name-${cat.id}">${escHtml(cat.name)}</span>
+      <button class="btn btn-link btn-sm text-secondary p-0 ms-1" style="font-size:11px"
+              onclick="openEditCat(${cat.id}, '${escHtml(cat.name)}', '${escHtml(cat.color)}')" title="Edit category">
+        <i class="bi bi-pencil"></i>
+      </button>
+      <button class="btn btn-link btn-sm text-danger p-0" style="font-size:11px"
+              onclick="deleteCategory(${cat.id}, '${escHtml(cat.name)}')" title="Delete category">
+        <i class="bi bi-x-lg"></i>
+      </button>`;
+    document.getElementById('catList').appendChild(chip);
+    if (window._initCatChipDrag) window._initCatChipDrag(chip);
+
+    // Add option to all category selects in the table
+    document.querySelectorAll('.cat-select').forEach(sel => {
+      const opt = document.createElement('option');
+      opt.value = cat.id;
+      opt.dataset.color = cat.color;
+      opt.textContent = cat.name;
+      sel.appendChild(opt);
+    });
+
+    document.getElementById('newCatName').value = '';
+  })
+  .catch(err => console.error(err));
+}
+
+// Category edit
+let _editCatId = null;
+const editCatModal = new bootstrap.Modal(document.getElementById('editCatModal'));
+
+function openEditCat(id, name, color) {
+  _editCatId = id;
+  document.getElementById('editCatName').value  = name;
+  document.getElementById('editCatColor').value = color;
+  editCatModal.show();
+  setTimeout(() => document.getElementById('editCatName').focus(), 300);
+}
+
+document.getElementById('editCatSaveBtn').addEventListener('click', () => {
+  const name  = document.getElementById('editCatName').value.trim();
+  const color = document.getElementById('editCatColor').value;
+  if (!name) return;
+
+  fetch(`/categories/${_editCatId}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, color })
+  })
+  .then(r => r.json())
+  .then(cat => {
+    if (cat.error) { alert(cat.error); return; }
+    editCatModal.hide();
+
+    // Update chip
+    const dot  = document.querySelector(`.cat-dot-${cat.id}`);
+    const label = document.querySelector(`.cat-name-${cat.id}`);
+    if (dot)   dot.style.background = cat.color;
+    if (label) label.textContent    = cat.name;
+
+    // Update all matching select options
+    document.querySelectorAll('.cat-select').forEach(sel => {
+      const opt = sel.querySelector(`option[value="${cat.id}"]`);
+      if (!opt) return;
+      opt.textContent     = cat.name;
+      opt.dataset.color   = cat.color;
+      // Refresh border if this option is selected
+      if (sel.value == cat.id) {
+        sel.style.borderColor = cat.color;
+        sel.style.boxShadow   = `0 0 0 1px ${cat.color}33`;
+      }
+    });
+  })
+  .catch(err => console.error(err));
+});
+
+document.getElementById('editCatName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('editCatSaveBtn').click();
+});
+
+function deleteCategory(id, name) {
+  if (!confirm(`Delete category "${name}"? Assets assigned to it will become uncategorized.`)) return;
+  fetch(`/categories/${id}/delete`, { method: 'POST' })
+    .then(r => r.json())
+    .then(() => {
+      const chip = document.getElementById(`catChip-${id}`);
+      if (chip) chip.remove();
+
+      // Remove option from all selects and reset if it was selected
+      document.querySelectorAll('.cat-select').forEach(sel => {
+        if (sel.value == id) {
+          sel.value = '';
+          sel.style.borderColor = '';
+          sel.style.boxShadow = '';
+        }
+        const opt = sel.querySelector(`option[value="${id}"]`);
+        if (opt) opt.remove();
+      });
+    })
+    .catch(err => console.error(err));
+}
+
+// MAC address editing
+let _editMacCurrent = null;
+const macModal = new bootstrap.Modal(document.getElementById('macModal'));
+
+function editMac(currentKey) {
+  _editMacCurrent = currentKey;
+  // Pre-fill only if it's already a real MAC (not a synthetic ip: or hostname: key)
+  const isSynthetic = currentKey.startsWith('ip:') || currentKey.startsWith('hostname:');
+  document.getElementById('macInput').value = isSynthetic ? '' : currentKey;
+  macModal.show();
+  setTimeout(() => document.getElementById('macInput').focus(), 300);
+}
+
+document.getElementById('macSaveBtn').addEventListener('click', () => {
+  const raw = document.getElementById('macInput').value.trim().toUpperCase();
+  if (!raw) return;
+  fetch(`/assets/${encodeURIComponent(_editMacCurrent)}/set-mac`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_mac: raw })
+  })
+  .then(r => r.json())
+  .then(res => {
+    if (res.error) { alert(res.error); return; }
+    macModal.hide();
+    // Reload page so the row reflects the new MAC key
+    location.reload();
+  })
+  .catch(err => console.error(err));
+});
+
+document.getElementById('macInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('macSaveBtn').click();
+});
+
+// ── Category drag-and-drop reorder ───────────────────────────────────────
+{% if current_user.is_admin() %}
+(function() {
+  let _dragSrc = null;
+
+  function onDragStart(e) {
+    _dragSrc = this;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => this.classList.add('dragging'), 0);
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (this !== _dragSrc) this.classList.add('drag-over');
+    return false;
+  }
+
+  function onDragLeave() {
+    this.classList.remove('drag-over');
+  }
+
+  function onDrop(e) {
+    e.stopPropagation();
+    this.classList.remove('drag-over');
+    if (!_dragSrc || _dragSrc === this) return false;
+    const list = document.getElementById('catList');
+    const rect = this.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      list.insertBefore(_dragSrc, this);
+    } else {
+      this.after(_dragSrc);
+    }
+    saveCatOrder();
+    return false;
+  }
+
+  function onDragEnd() {
+    this.classList.remove('dragging');
+    document.querySelectorAll('.cat-chip.drag-over').forEach(el => el.classList.remove('drag-over'));
+    _dragSrc = null;
+  }
+
+  function initChipDrag(chip) {
+    chip.setAttribute('draggable', 'true');
+    chip.addEventListener('dragstart',  onDragStart);
+    chip.addEventListener('dragover',   onDragOver);
+    chip.addEventListener('dragleave',  onDragLeave);
+    chip.addEventListener('drop',       onDrop);
+    chip.addEventListener('dragend',    onDragEnd);
+  }
+
+  function saveCatOrder() {
+    const ids = [...document.getElementById('catList').querySelectorAll('.cat-chip[data-cat-id]')]
+      .map(c => c.dataset.catId);
+    fetch('/categories/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
+    }).catch(err => console.error(err));
+  }
+
+  document.querySelectorAll('.cat-chip[data-cat-id]').forEach(initChipDrag);
+  window._initCatChipDrag = initChipDrag;
+})();
+{% endif %}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Column sorting ────────────────────────────────────────────────────────
+(function() {
+  let _sortCol = -1, _sortAsc = true;
+  const table = document.getElementById('assetTable');
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+
+  document.querySelectorAll('#assetTable th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = +th.dataset.col;
+      if (_sortCol === col) {
+        _sortAsc = !_sortAsc;
+      } else {
+        _sortCol = col;
+        _sortAsc = true;
+      }
+
+      // Update indicators
+      document.querySelectorAll('#assetTable th.sortable .sort-icon').forEach(ic => ic.textContent = '');
+      th.querySelector('.sort-icon').textContent = _sortAsc ? '▲' : '▼';
+
+      // Sort rows
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.sort((a, b) => {
+        const ca = a.querySelectorAll('td')[col];
+        const cb = b.querySelectorAll('td')[col];
+        const va = (ca ? ca.textContent : '').trim().toLowerCase();
+        const vb = (cb ? cb.textContent : '').trim().toLowerCase();
+        return _sortAsc ? va.localeCompare(vb, undefined, {numeric: true}) : vb.localeCompare(va, undefined, {numeric: true});
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+})();
+</script>
+{% endblock %}

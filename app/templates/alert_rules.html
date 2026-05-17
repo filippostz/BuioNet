@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+{% block title %}Alert Rules — BuioNet{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-4">
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="mb-0 fw-bold">
+        <i class="bi bi-funnel-fill text-info me-2"></i>Alert Rules
+      </h4>
+      <p class="text-muted small mb-0 mt-1">Define which network events trigger alerts and how they are reported</p>
+    </div>
+    {% if current_user.is_admin() %}
+    <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#ruleModal"
+            onclick="openCreate()">
+      <i class="bi bi-plus-lg me-1"></i>New Rule
+    </button>
+    {% endif %}
+  </div>
+
+  <!-- Variable reference -->
+  <div class="mb-4 px-3 py-2 rounded border border-secondary" style="background:#0a0f1a;font-size:12px">
+    <span class="text-muted me-2">Message variables:</span>
+    <code class="text-info me-3">{ip}</code>
+    <code class="text-info me-3">{mac}</code>
+    <code class="text-info me-3">{hostname}</code>
+    <code class="text-info me-3">{vendor}</code>
+    <code class="text-info me-3">{port}</code>
+    <code class="text-info">{service}</code>
+  </div>
+
+  {% if rules %}
+  <div class="card border-secondary">
+    <div class="card-body p-0">
+      <table class="table table-dark table-hover mb-0 align-middle">
+        <thead class="border-bottom border-secondary">
+          <tr>
+            <th class="ps-4" style="width:40px">On</th>
+            <th>Name</th>
+            <th>Event</th>
+            <th>Filters</th>
+            <th>Message Template</th>
+            {% if current_user.is_admin() %}
+            <th class="pe-4"></th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for rule in rules %}
+          <tr class="{% if not rule.enabled %}opacity-50{% endif %}">
+            <td class="ps-4">
+              {% if current_user.is_admin() %}
+              <form method="post" action="{{ url_for('alert_rules.toggle', rule_id=rule.id) }}">
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" onchange="this.form.submit()"
+                         {% if rule.enabled %}checked{% endif %}>
+                </div>
+              </form>
+              {% else %}
+              <i class="bi bi-{% if rule.enabled %}toggle-on text-info{% else %}toggle-off text-muted{% endif %}"></i>
+              {% endif %}
+            </td>
+            <td class="fw-semibold">{{ rule.name }}</td>
+            <td>
+              {% if rule.event_type == 'new_host' %}
+                <span class="badge bg-info text-dark">New Host</span>
+              {% elif rule.event_type == 'host_gone' %}
+                <span class="badge bg-danger">Host Gone</span>
+              {% elif rule.event_type == 'port_opened' %}
+                <span class="badge bg-success">Port Opened</span>
+              {% elif rule.event_type == 'port_closed' %}
+                <span class="badge bg-secondary">Port Closed</span>
+              {% elif rule.event_type == 'new_asset' %}
+                <span class="badge bg-warning text-dark">New Asset</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if rule.filters %}
+                {% for k, v in rule.filters.items() %}
+                <span class="badge border border-secondary me-1"
+                      style="background:rgba(255,255,255,0.05);color:#adb5bd;font-size:10px">
+                  {{ k }}: <span class="text-info">{{ v }}</span>
+                </span>
+                {% endfor %}
+              {% else %}
+                <span class="text-muted small fst-italic">none (always fires)</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small font-monospace">{{ rule.message }}</td>
+            {% if current_user.is_admin() %}
+            <td class="pe-4">
+              <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-outline-secondary edit-rule-btn"
+                        data-id="{{ rule.id }}"
+                        data-rule='{{ rule|tojson }}'>
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <form method="post" action="{{ url_for('alert_rules.delete', rule_id=rule.id) }}"
+                      onsubmit="return confirm('Delete rule {{ rule.name|e }}?')">
+                  <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                </form>
+              </div>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center py-5 text-muted">
+    <i class="bi bi-funnel display-1 opacity-25"></i>
+    <h5 class="mt-3">No rules defined</h5>
+    <p class="small">Create a rule to start generating alerts on scan uploads.</p>
+  </div>
+  {% endif %}
+</div>
+
+{% if current_user.is_admin() %}
+<!-- Create / Edit Modal -->
+<div class="modal fade" id="ruleModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="ruleModalTitle"><i class="bi bi-funnel text-info me-2"></i>New Rule</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="ruleForm" method="post">
+        <div class="modal-body">
+          <input type="hidden" name="rule_id" id="ruleId">
+
+          <div class="mb-3">
+            <label class="form-label small text-muted">Rule Name</label>
+            <input type="text" name="name" id="ruleName" class="form-control bg-dark border-secondary text-white"
+                   placeholder="e.g. New unknown device" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small text-muted">Event Type</label>
+            <select name="event_type" id="ruleEventType" class="form-select bg-dark border-secondary text-white" required>
+              {% for val, label in event_types %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small text-muted">Message Template</label>
+            <input type="text" name="message" id="ruleMessage" class="form-control bg-dark border-secondary text-white font-monospace"
+                   placeholder="e.g. New host {mac} at {ip}" required>
+            <div class="form-text text-muted" style="font-size:11px">
+              Variables: {ip} {mac} {hostname} {vendor} {port} {service}
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label small text-muted d-flex align-items-center justify-content-between">
+              <span>Filters <span class="text-muted fst-italic">(all must match — leave empty to always fire)</span></span>
+              <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                      onclick="addFilterRow()">
+                <i class="bi bi-plus-lg me-1"></i>Add Condition
+              </button>
+            </label>
+            <div id="filterRows" class="d-flex flex-column gap-2"></div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-info">Save Rule</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Filter row template -->
+<template id="filterRowTpl">
+  <div class="d-flex gap-2 align-items-center filter-row">
+    <select name="filter_key[]" class="form-select form-select-sm bg-dark border-secondary text-white" style="flex:0 0 260px">
+      {% for val, label in filter_types %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="filter_value[]" class="form-control form-control-sm bg-dark border-secondary text-white"
+           placeholder="value / pattern">
+    <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0"
+            onclick="this.closest('.filter-row').remove()">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+</template>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if current_user.is_admin() %}
+<script>
+const ruleModal = new bootstrap.Modal(document.getElementById('ruleModal'));
+const filterTypes = {{ filter_types | tojson }};
+
+function addFilterRow(key='', value='') {
+  const tpl = document.getElementById('filterRowTpl').content.cloneNode(true);
+  const sel = tpl.querySelector('select[name="filter_key[]"]');
+  const inp = tpl.querySelector('input[name="filter_value[]"]');
+  if (key) sel.value = key;
+  if (value) inp.value = value;
+  document.getElementById('filterRows').appendChild(tpl);
+}
+
+function openCreate() {
+  document.getElementById('ruleModalTitle').textContent = 'New Rule';
+  document.getElementById('ruleForm').action = '{{ url_for("alert_rules.create") }}';
+  document.getElementById('ruleName').value = '';
+  document.getElementById('ruleEventType').value = 'new_host';
+  document.getElementById('ruleMessage').value = '';
+  document.getElementById('filterRows').innerHTML = '';
+}
+
+document.querySelectorAll('.edit-rule-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id   = btn.dataset.id;
+    const rule = JSON.parse(btn.dataset.rule);
+    document.getElementById('ruleModalTitle').textContent = 'Edit Rule';
+    document.getElementById('ruleForm').action = `/alert-rules/${id}/update`;
+    document.getElementById('ruleName').value      = rule.name;
+    document.getElementById('ruleEventType').value = rule.event_type;
+    document.getElementById('ruleMessage').value   = rule.message;
+    document.getElementById('filterRows').innerHTML = '';
+    Object.entries(rule.filters || {}).forEach(([k, v]) => addFilterRow(k, v));
+    ruleModal.show();
+  });
+});
+</script>
+{% endif %}
+{% endblock %}
